@@ -1,0 +1,153 @@
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using Moq;
+using System;
+using System.Collections.Generic;
+using System.Threading.Tasks;
+using Xunit;
+
+public class ServiceEndPointsTests
+{
+    [Fact]
+    public void SetResponseHeaders_SetsCorrectHeaders()
+    {
+        // Arrange
+        var httpContext = new DefaultHttpContext();
+        string correlationId = null;
+
+        // Act
+        ServiceEndPoints.setResponseHeaders(ref httpContext, ref correlationId);
+
+        // Assert
+        Assert.NotNull(correlationId);
+        Assert.True(Guid.TryParse(correlationId, out _));
+        Assert.Equal(correlationId, httpContext.Response.Headers[Constants.HEADER_CORRELATION_ID]);
+        Assert.Equal(Constants.HEADER_API_VERSION, httpContext.Response.Headers[Constants.HEADER_API_VERSION]);
+        Assert.Equal(Constants.HEADER_CONTENT_TYPE_VALUE, httpContext.Response.Headers[Constants.HEADER_CONTENT_TYPE_OPTIONS]);
+    }
+
+    [Fact]
+    public void ResponseWithError_ReturnsCorrectResult()
+    {
+        // Arrange
+        var response = new MyResponse { Errors = new List<Error>() };
+        var error = new Error { ReasonCode = "Test", ReasonText = "Test Error", ReasonMessage = "Test Message" };
+
+        // Act
+        var result = ServiceEndPoints.responseWithError(response, error);
+
+        // Assert
+        var jsonResult = Assert.IsType<JsonResult>(result);
+        Assert.Equal(400, jsonResult.StatusCode);
+        Assert.Single(response.Errors);
+        Assert.Equal(error, response.Errors[0]);
+    }
+
+    [Fact]
+    public void GrpcServiceNotAvailable_ReturnsCorrectResult()
+    {
+        // Arrange
+        var response = new MyResponse { Errors = new List<Error>() };
+
+        // Act
+        var result = ServiceEndPoints.grpcServiceNotAvailable(response);
+
+        // Assert
+        var jsonResult = Assert.IsType<JsonResult>(result);
+        Assert.Equal(503, jsonResult.StatusCode);
+        Assert.Single(response.Errors);
+        Assert.Equal(Constants.SERVICE_NOT_ACCESSIBLE, response.Errors[0].ReasonCode);
+    }
+
+    [Fact]
+    public void PerformCommonAction_WithValidRequest_ReturnsNull()
+    {
+        // Arrange
+        var httpContext = new DefaultHttpContext();
+        var response = new MyResponse();
+        var request = new MyRequest();
+        string correlationId = null;
+        string applicationId = "TestApp";
+
+        // Mock Validations.SendRequestForValidation to return an empty list
+        // You might need to use a different approach depending on how Validations is implemented
+        // For this example, we assume it's a static method that can be mocked using a library like Microsoft Fakes
+        
+        // Act
+        var result = ServiceEndPoints.performCommonAction(ref httpContext, response, ref correlationId, applicationId, ref request);
+
+        // Assert
+        Assert.Null(result);
+        Assert.NotNull(correlationId);
+        Assert.Equal(applicationId, request.AppName);
+        Assert.Equal(correlationId, request.AppReqID);
+    }
+
+    [Fact]
+    public async Task ScannerConnect_SuccessfulRequest_ReturnsOkResult()
+    {
+        // Arrange
+        var httpContext = new DefaultHttpContext();
+        var request = new MyRequest();
+        string correlationId = "TestCorrelationId";
+        string applicationId = "TestApp";
+        var grpcClientMock = new Mock<IGrpcIVRServiceClient>();
+        var subResponse = new MySubResponse();
+        grpcClientMock.Setup(x => x.ScannerConnect(It.IsAny<MyRequest>()))
+            .ReturnsAsync((subResponse, new Error { ErrorMessage = string.Empty }));
+
+        // Act
+        var result = await ServiceEndPoints.ScannerConnect(request, correlationId, applicationId, httpContext, grpcClientMock.Object);
+
+        // Assert
+        var okResult = Assert.IsType<OkObjectResult>(result);
+        var response = Assert.IsType<MyResponse>(okResult.Value);
+        Assert.Equal(subResponse, response.MySubResponse);
+        Assert.Empty(response.Errors);
+    }
+
+    [Fact]
+    public async Task ScannerConnect_GrpcServiceNotAvailable_ReturnsServiceNotAvailableResult()
+    {
+        // Arrange
+        var httpContext = new DefaultHttpContext();
+        var request = new MyRequest();
+        string correlationId = "TestCorrelationId";
+        string applicationId = "TestApp";
+        var grpcClientMock = new Mock<IGrpcIVRServiceClient>();
+        grpcClientMock.Setup(x => x.ScannerConnect(It.IsAny<MyRequest>()))
+            .ReturnsAsync((null, new Error()));
+
+        // Act
+        var result = await ServiceEndPoints.ScannerConnect(request, correlationId, applicationId, httpContext, grpcClientMock.Object);
+
+        // Assert
+        var jsonResult = Assert.IsType<JsonResult>(result);
+        Assert.Equal(503, jsonResult.StatusCode);
+    }
+
+    [Fact]
+    public async Task ScannerConnect_GrpcErrorResponse_ReturnsErrorResult()
+    {
+        // Arrange
+        var httpContext = new DefaultHttpContext();
+        var request = new MyRequest();
+        string correlationId = "TestCorrelationId";
+        string applicationId = "TestApp";
+        var grpcClientMock = new Mock<IGrpcIVRServiceClient>();
+        var subResponse = new MySubResponse();
+        var error = new Error { ErrorMessage = "Test Error" };
+        grpcClientMock.Setup(x => x.ScannerConnect(It.IsAny<MyRequest>()))
+            .ReturnsAsync((subResponse, error));
+
+        // Act
+        var result = await ServiceEndPoints.ScannerConnect(request, correlationId, applicationId, httpContext, grpcClientMock.Object);
+
+        // Assert
+        var jsonResult = Assert.IsType<JsonResult>(result);
+        Assert.Equal(400, jsonResult.StatusCode);
+        var response = Assert.IsType<MyResponse>(jsonResult.Value);
+        Assert.Single(response.Errors);
+        Assert.Equal(error, response.Errors[0]);
+    }
+}
