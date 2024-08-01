@@ -151,3 +151,88 @@ public class ServiceEndPointsTests
         Assert.Equal(error, response.Errors[0]);
     }
 }
+
+
+public class ServiceEndPointsTests
+{
+    private readonly Mock<IGrpcIVRServiceClient> _grpcClientMock;
+    private readonly HttpContext _httpContext;
+    private readonly MyRequest _request;
+    private readonly string _correlationId;
+    private readonly string _applicationId;
+
+    public ServiceEndPointsTests()
+    {
+        _grpcClientMock = new Mock<IGrpcIVRServiceClient>();
+        _httpContext = new DefaultHttpContext();
+        _request = new MyRequest { TellerName = "John Doe" };
+        _correlationId = "TestCorrelationId";
+        _applicationId = "TestApp";
+    }
+
+    [Fact]
+    public async Task ScannerConnect_SuccessfulRequest_ReturnsOkResult()
+    {
+        // Arrange
+        var expectedSubResponse = new MySubResponse
+        {
+            SessionToken = "ABC123XYZ",
+            TellerName = "John Doe"
+        };
+        
+        _grpcClientMock.Setup(x => x.ScannerConnect(It.IsAny<MyRequest>()))
+            .Returns(Task.FromResult((expectedSubResponse, new Error { ErrorMessage = string.Empty })));
+
+        // Act
+        var result = await ServiceEndPoints.ScannerConnect(_request, _correlationId, _applicationId, _httpContext, _grpcClientMock.Object);
+
+        // Assert
+        var okResult = Assert.IsType<OkObjectResult>(result);
+        var response = Assert.IsType<MyResponse>(okResult.Value);
+        
+        Assert.NotNull(response.MySubResponse);
+        Assert.Equal(expectedSubResponse.SessionToken, response.MySubResponse.SessionToken);
+        Assert.Equal(expectedSubResponse.TellerName, response.MySubResponse.TellerName);
+        
+        Assert.Empty(response.Errors);
+        Assert.Empty(response.Warnings);
+
+        _grpcClientMock.Verify(x => x.ScannerConnect(It.IsAny<MyRequest>()), Times.Once);
+    }
+    [Fact]
+public void SetResponseHeaders_SetsCorrectHeaders()
+{
+    // Arrange
+    string correlationId = null;
+
+    // Act
+    ServiceEndPoints.setResponseHeaders(ref _httpContext, ref correlationId);
+
+    // Assert
+    Assert.NotNull(correlationId);
+    Assert.True(Guid.TryParse(correlationId, out _));
+    Assert.Equal(correlationId, _httpContext.Response.Headers[Constants.HEADER_CORRELATION_ID]);
+    Assert.Equal(Constants.HEADER_API_VERSION, _httpContext.Response.Headers[Constants.HEADER_API_VERSION]);
+    Assert.Equal(Constants.HEADER_CONTENT_TYPE_VALUE, _httpContext.Response.Headers[Constants.HEADER_CONTENT_TYPE_OPTIONS]);
+}
+
+[Fact]
+public void ResponseWithError_ReturnsCorrectResult()
+{
+    // Arrange
+    var response = new MyResponse { Errors = new List<Error>() };
+    var error = new Error { ReasonCode = "Test" };
+
+    // Act
+    var result = ServiceEndPoints.responseWithError(response, error);
+
+    // Assert
+    var jsonResult = Assert.IsType<JsonResult>(result);
+    Assert.Equal(400, jsonResult.StatusCode);
+    Assert.Single(response.Errors);
+    Assert.Equal(error, response.Errors[0]);
+}
+
+// Add other optimized test methods...
+    // Add other test methods here...
+}
