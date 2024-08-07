@@ -155,6 +155,57 @@ public class ServiceEndPointsTests
             Assert.Equal(error, typedResponse.Errors[0]);
         });
     }
+
+
+    [Fact]
+    public void IVRStart_ShouldReturnStream_WhenGrpcCallSucceeds()
+    {
+        // Arrange
+        var request = new IVRStartRequest();
+        var expectedResponse = new IVRStartStreamResponse();
+        var asyncServerStreamingCall = CreateAsyncServerStreamingCall(expectedResponse);
+
+        _clientMock.Setup(c => c.IVRStart(It.IsAny<IVRStartRequest>()))
+            .Returns(asyncServerStreamingCall);
+
+        // Act
+        var stream = _grpcClient.IVRStart(request);
+
+        // Assert
+        Assert.NotNull(stream);
+        Assert.Equal(asyncServerStreamingCall, stream);
+    }
+
+    [Fact]
+    public void IVRStart_ShouldReturnNull_WhenGrpcCallFails()
+    {
+        // Arrange
+        var request = new IVRStartRequest();
+
+        _clientMock.Setup(c => c.IVRStart(It.IsAny<IVRStartRequest>()))
+            .Throws(new Exception("Grpc call failed"));
+
+        // Act
+        var stream = _grpcClient.IVRStart(request);
+
+        // Assert
+        Assert.Null(stream);
+    }
+
+    private AsyncServerStreamingCall<TResponse> CreateAsyncServerStreamingCall<TResponse>(TResponse response) where TResponse : class
+    {
+        var responseStream = new Mock<IAsyncStreamReader<TResponse>>();
+        responseStream.Setup(rs => rs.MoveNext(It.IsAny<System.Threading.CancellationToken>()))
+            .ReturnsAsync(true);
+        responseStream.Setup(rs => rs.Current).Returns(response);
+
+        return new AsyncServerStreamingCall<TResponse>(
+            responseStream.Object,
+            Task.FromResult(new Metadata()),
+            () => Status.DefaultSuccess,
+            () => new Metadata(),
+            () => { });
+    }
 }
 
 
