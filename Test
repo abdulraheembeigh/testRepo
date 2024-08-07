@@ -1,10 +1,9 @@
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Mvc;
-using Moq;
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Http;
 using Xunit;
+using Moq;
 
 public class ServiceEndPointsTests
 {
@@ -37,10 +36,11 @@ public class ServiceEndPointsTests
         var result = ServiceEndPoints.responseWithError(response, error);
 
         // Assert
-        var jsonResult = Assert.IsType<JsonResult>(result);
-        Assert.Equal(400, jsonResult.StatusCode);
-        Assert.Single(response.Errors);
-        Assert.Equal(error, response.Errors[0]);
+        TestHelpers.AssertJsonResult<MyResponse>(result, 400, typedResponse =>
+        {
+            Assert.Single(typedResponse.Errors);
+            Assert.Equal(error, typedResponse.Errors[0]);
+        });
     }
 
     [Fact]
@@ -53,10 +53,11 @@ public class ServiceEndPointsTests
         var result = ServiceEndPoints.grpcServiceNotAvailable(response);
 
         // Assert
-        var jsonResult = Assert.IsType<JsonResult>(result);
-        Assert.Equal(503, jsonResult.StatusCode);
-        Assert.Single(response.Errors);
-        Assert.Equal(Constants.SERVICE_NOT_ACCESSIBLE, response.Errors[0].ReasonCode);
+        TestHelpers.AssertJsonResult<MyResponse>(result, 503, typedResponse =>
+        {
+            Assert.Single(typedResponse.Errors);
+            Assert.Equal(Constants.SERVICE_NOT_ACCESSIBLE, typedResponse.Errors[0].ReasonCode);
+        });
     }
 
     [Fact]
@@ -100,10 +101,11 @@ public class ServiceEndPointsTests
         var result = await ServiceEndPoints.ScannerConnect(request, correlationId, applicationId, httpContext, grpcClientMock.Object);
 
         // Assert
-        var okResult = Assert.IsType<OkObjectResult>(result);
-        var response = Assert.IsType<MyResponse>(okResult.Value);
-        Assert.Equal(subResponse, response.MySubResponse);
-        Assert.Empty(response.Errors);
+        TestHelpers.AssertJsonResult<MyResponse>(result, 200, typedResponse =>
+        {
+            Assert.Equal(subResponse, typedResponse.MySubResponse);
+            Assert.Empty(typedResponse.Errors);
+        });
     }
 
     [Fact]
@@ -122,8 +124,11 @@ public class ServiceEndPointsTests
         var result = await ServiceEndPoints.ScannerConnect(request, correlationId, applicationId, httpContext, grpcClientMock.Object);
 
         // Assert
-        var jsonResult = Assert.IsType<JsonResult>(result);
-        Assert.Equal(503, jsonResult.StatusCode);
+        TestHelpers.AssertJsonResult<MyResponse>(result, 503, typedResponse =>
+        {
+            Assert.Single(typedResponse.Errors);
+            Assert.Equal(Constants.SERVICE_NOT_ACCESSIBLE, typedResponse.Errors[0].ReasonCode);
+        });
     }
 
     [Fact]
@@ -144,357 +149,52 @@ public class ServiceEndPointsTests
         var result = await ServiceEndPoints.ScannerConnect(request, correlationId, applicationId, httpContext, grpcClientMock.Object);
 
         // Assert
-        var jsonResult = Assert.IsType<JsonResult>(result);
-        Assert.Equal(400, jsonResult.StatusCode);
-        var response = Assert.IsType<MyResponse>(jsonResult.Value);
-        Assert.Single(response.Errors);
-        Assert.Equal(error, response.Errors[0]);
-    }
-}
-
-
-public class ServiceEndPointsTests
-{
-    private readonly Mock<IGrpcIVRServiceClient> _grpcClientMock;
-    private readonly HttpContext _httpContext;
-    private readonly MyRequest _request;
-    private readonly string _correlationId;
-    private readonly string _applicationId;
-
-    public ServiceEndPointsTests()
-    {
-        _grpcClientMock = new Mock<IGrpcIVRServiceClient>();
-        _httpContext = new DefaultHttpContext();
-        _request = new MyRequest { TellerName = "John Doe" };
-        _correlationId = "TestCorrelationId";
-        _applicationId = "TestApp";
-    }
-
-    [Fact]
-    public async Task ScannerConnect_SuccessfulRequest_ReturnsOkResult()
-    {
-        // Arrange
-        var expectedSubResponse = new MySubResponse
+        TestHelpers.AssertJsonResult<MyResponse>(result, 400, typedResponse =>
         {
-            SessionToken = "ABC123XYZ",
-            TellerName = "John Doe"
-        };
-        
-        _grpcClientMock.Setup(x => x.ScannerConnect(It.IsAny<MyRequest>()))
-            .Returns(Task.FromResult((expectedSubResponse, new Error { ErrorMessage = string.Empty })));
-
-        // Act
-        var result = await ServiceEndPoints.ScannerConnect(_request, _correlationId, _applicationId, _httpContext, _grpcClientMock.Object);
-
-        // Assert
-        var okResult = Assert.IsType<OkObjectResult>(result);
-        var response = Assert.IsType<MyResponse>(okResult.Value);
-        
-        Assert.NotNull(response.MySubResponse);
-        Assert.Equal(expectedSubResponse.SessionToken, response.MySubResponse.SessionToken);
-        Assert.Equal(expectedSubResponse.TellerName, response.MySubResponse.TellerName);
-        
-        Assert.Empty(response.Errors);
-        Assert.Empty(response.Warnings);
-
-        _grpcClientMock.Verify(x => x.ScannerConnect(It.IsAny<MyRequest>()), Times.Once);
-    }
-    [Fact]
-public void SetResponseHeaders_SetsCorrectHeaders()
-{
-    // Arrange
-    string correlationId = null;
-
-    // Act
-    ServiceEndPoints.setResponseHeaders(ref _httpContext, ref correlationId);
-
-    // Assert
-    Assert.NotNull(correlationId);
-    Assert.True(Guid.TryParse(correlationId, out _));
-    Assert.Equal(correlationId, _httpContext.Response.Headers[Constants.HEADER_CORRELATION_ID]);
-    Assert.Equal(Constants.HEADER_API_VERSION, _httpContext.Response.Headers[Constants.HEADER_API_VERSION]);
-    Assert.Equal(Constants.HEADER_CONTENT_TYPE_VALUE, _httpContext.Response.Headers[Constants.HEADER_CONTENT_TYPE_OPTIONS]);
-}
-
-[Fact]
-public void ResponseWithError_ReturnsCorrectResult()
-{
-    // Arrange
-    var response = new MyResponse { Errors = new List<Error>() };
-    var error = new Error { ReasonCode = "Test" };
-
-    // Act
-    var result = ServiceEndPoints.responseWithError(response, error);
-
-    // Assert
-    var jsonResult = Assert.IsType<JsonResult>(result);
-    Assert.Equal(400, jsonResult.StatusCode);
-    Assert.Single(response.Errors);
-    Assert.Equal(error, response.Errors[0]);
-}
-
-// Add other optimized test methods...
-    // Add other test methods here...
-}
-
-
-
-
-
-public partial class GrpcClient : IGrpcClient
-{
-    private readonly YourGeneratedGrpcClient.YourGeneratedGrpcClientClient _client;
-    private readonly GrpcChannel _channel;
-    private readonly HttpClientHandler _handler = new();
-
-    public GrpcClient(string serverUrl)
-    {
-        _handler.ClientCertificates.Add(GetCertificate());
-        _handler.ServerCertificateCustomValidationCallback = ServerCertificateCustomValidation;
-        _channel = CreateGrpcChannel(serverUrl, new GrpcChannelOptions
-        {
-            HttpHandler = _handler
+            Assert.Single(typedResponse.Errors);
+            Assert.Equal(error, typedResponse.Errors[0]);
         });
-        _client = CreateGrpcClient(_channel);
-    }
-
-    // ... rest of your code ...
-
-    private GrpcChannel CreateGrpcChannel(string serverUrl, GrpcChannelOptions options)
-    {
-        return GrpcChannel.ForAddress(serverUrl, options);
-    }
-
-    private YourGeneratedGrpcClient.YourGeneratedGrpcClientClient CreateGrpcClient(GrpcChannel channel)
-    {
-        return new YourGeneratedGrpcClient.YourGeneratedGrpcClientClient(channel);
-    }
-
-    // You'll need to implement these methods
-    private X509Certificate2 GetCertificate()
-    {
-        // Implementation
-    }
-
-    private bool ServerCertificateCustomValidation(HttpRequestMessage request, X509Certificate2 certificate, X509Chain chain, SslPolicyErrors sslPolicyErrors)
-    {
-        // Implementation
     }
 }
 
+
 using System;
-using System.Net.Http;
-using System.Security.Cryptography.X509Certificates;
-using System.Threading.Tasks;
-using Grpc.Core;
-using Grpc.Net.Client;
-using Moq;
+using System.Reflection;
+using System.Text.Json;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using Xunit;
 
-public class GrpcClientTests
+public static class TestHelpers
 {
-    private readonly Mock<YourGeneratedGrpcClient.YourGeneratedGrpcClientClient> _mockGrpcClientBase;
-    private readonly Mock<GrpcChannel> _mockChannel;
-    private readonly string _serverUrl = "https://test.server.com";
-
-    public GrpcClientTests()
+    public static void AssertJsonResult<T>(IResult result, int expectedStatusCode, Action<T> additionalAssertions)
     {
-        _mockGrpcClientBase = new Mock<YourGeneratedGrpcClient.YourGeneratedGrpcClientClient>();
-        _mockChannel = new Mock<GrpcChannel>();
-    }
+        Assert.NotNull(result);
+        Assert.True(result is IResult, $"Expected IResult, but got {result.GetType()}");
 
-    private GrpcClient CreateGrpcClient()
-    {
-        return new GrpcClient(_serverUrl)
+        // Check status code
+        var statusCodeProperty = result.GetType().GetProperty("StatusCode");
+        Assert.NotNull(statusCodeProperty);
+        var statusCode = statusCodeProperty.GetValue(result);
+        Assert.Equal(expectedStatusCode, statusCode);
+
+        // Get the response value
+        var valueProperty = result.GetType().GetProperty("Value");
+        Assert.NotNull(valueProperty);
+        var value = valueProperty.GetValue(result);
+
+        T typedResponse;
+        if (value is T directValue)
         {
-            CreateChannel = (url, options) => _mockChannel.Object,
-            CreateClient = (channel) => _mockGrpcClientBase.Object
-        };
-    }
+            typedResponse = directValue;
+        }
+        else
+        {
+            var jsonString = JsonSerializer.Serialize(value);
+            typedResponse = JsonSerializer.Deserialize<T>(jsonString);
+        }
 
-    [Fact]
-    public void Constructor_InitializesPropertiesCorrectly()
-    {
-        // Act
-        var client = CreateGrpcClient();
-
-        // Assert
-        Assert.NotNull(client);
-        // Add more assertions if you have public properties to check
-    }
-
-    [Fact]
-    public async Task CallMethod_SuccessfulCall_ReturnsResponse()
-    {
-        // Arrange
-        var client = CreateGrpcClient();
-        var expectedResponse = new ResponseType { /* Set properties */ };
-        _mockGrpcClientBase.Setup(c => c.CallMethodAsync(It.IsAny<RequestType>(), null, null, default))
-            .ReturnsAsync(expectedResponse);
-
-        // Act
-        var result = await client.CallMethod(new RequestType());
-
-        // Assert
-        Assert.NotNull(result);
-        Assert.Equal(expectedResponse, result);
-    }
-
-    [Fact]
-    public async Task CallMethod_ExceptionThrown_ReturnsNull()
-    {
-        // Arrange
-        var client = CreateGrpcClient();
-        _mockGrpcClientBase.Setup(c => c.CallMethodAsync(It.IsAny<RequestType>(), null, null, default))
-            .ThrowsAsync(new RpcException(new Status(StatusCode.Internal, "Test error")));
-
-        // Act
-        var result = await client.CallMethod(new RequestType());
-
-        // Assert
-        Assert.Null(result);
-    }
-
-    [Fact]
-    public async Task CallMethod_NullResponse_ReturnsNull()
-    {
-        // Arrange
-        var client = CreateGrpcClient();
-        _mockGrpcClientBase.Setup(c => c.CallMethodAsync(It.IsAny<RequestType>(), null, null, default))
-            .ReturnsAsync((ResponseType)null);
-
-        // Act
-        var result = await client.CallMethod(new RequestType());
-
-        // Assert
-        Assert.Null(result);
-    }
-}
-
-// Extensions to the GrpcClient class to allow for testing
-public partial class GrpcClient
-{
-    internal Func<string, GrpcChannelOptions, GrpcChannel> CreateChannel { get; set; } 
-        = (url, options) => GrpcChannel.ForAddress(url, options);
-
-    internal Func<GrpcChannel, YourGeneratedGrpcClient.YourGeneratedGrpcClientClient> CreateClient { get; set; }
-        = (channel) => new YourGeneratedGrpcClient.YourGeneratedGrpcClientClient(channel);
-
-    private GrpcChannel CreateGrpcChannel(string serverUrl, GrpcChannelOptions options)
-    {
-        return CreateChannel(serverUrl, options);
-    }
-
-    private YourGeneratedGrpcClient.YourGeneratedGrpcClientClient CreateGrpcClient(GrpcChannel channel)
-    {
-        return CreateClient(channel);
-    }
-}
-
-
-using System;
-using System.Threading.Tasks;
-using Grpc.Core;
-using Moq;
-using Xunit;
-
-public class GrpcClientTests
-{
-    private readonly Mock<YourGeneratedGrpcClient.YourGeneratedGrpcClientClient> _mockGrpcClientBase;
-    private readonly GrpcClient _grpcClient;
-
-    public GrpcClientTests()
-    {
-        _mockGrpcClientBase = new Mock<YourGeneratedGrpcClient.YourGeneratedGrpcClientClient>();
-        _grpcClient = new GrpcClient(_mockGrpcClientBase.Object);
-    }
-
-    [Fact]
-    public async Task CallMethod_SuccessfulCall_ReturnsResponse()
-    {
-        // Arrange
-        var expectedResponse = new ResponseType { /* Set properties */ };
-        _mockGrpcClientBase.Setup(client => client.CallMethodAsync(It.IsAny<RequestType>(), null, null, default))
-            .ReturnsAsync(expectedResponse);
-
-        // Act
-        var result = await _grpcClient.CallMethod(new RequestType());
-
-        // Assert
-        Assert.NotNull(result);
-        Assert.Equal(expectedResponse, result);
-    }
-
-    [Fact]
-    public async Task CallMethod_ExceptionThrown_ReturnsNull()
-    {
-        // Arrange
-        _mockGrpcClientBase.Setup(client => client.CallMethodAsync(It.IsAny<RequestType>(), null, null, default))
-            .ThrowsAsync(new RpcException(new Status(StatusCode.Internal, "Test error")));
-
-        // Act
-        var result = await _grpcClient.CallMethod(new RequestType());
-
-        // Assert
-        Assert.Null(result);
-    }
-
-    [Fact]
-    public async Task CallMethod_NullResponse_ReturnsNull()
-    {
-        // Arrange
-        _mockGrpcClientBase.Setup(client => client.CallMethodAsync(It.IsAny<RequestType>(), null, null, default))
-            .ReturnsAsync((ResponseType)null);
-
-        // Act
-        var result = await _grpcClient.CallMethod(new RequestType());
-
-        // Assert
-        Assert.Null(result);
-    }
-
-    [Fact]
-    public async Task CallMethod_SpecificRequest_CallsWithCorrectParameters()
-    {
-        // Arrange
-        var expectedRequest = new RequestType { /* Set specific properties */ };
-        _mockGrpcClientBase.Setup(client => client.CallMethodAsync(It.IsAny<RequestType>(), null, null, default))
-            .ReturnsAsync(new ResponseType());
-
-        // Act
-        await _grpcClient.CallMethod(expectedRequest);
-
-        // Assert
-        _mockGrpcClientBase.Verify(client => client.CallMethodAsync(
-            It.Is<RequestType>(req => /* Compare req with expectedRequest */),
-            null, null, default), Times.Once);
-    }
-
-    [Fact]
-    public async Task CallMethod_TimeoutException_ReturnsNull()
-    {
-        // Arrange
-        _mockGrpcClientBase.Setup(client => client.CallMethodAsync(It.IsAny<RequestType>(), null, null, default))
-            .ThrowsAsync(new TimeoutException());
-
-        // Act
-        var result = await _grpcClient.CallMethod(new RequestType());
-
-        // Assert
-        Assert.Null(result);
-    }
-
-    [Fact]
-    public async Task CallMethod_NonRpcException_ReturnsNull()
-    {
-        // Arrange
-        _mockGrpcClientBase.Setup(client => client.CallMethodAsync(It.IsAny<RequestType>(), null, null, default))
-            .ThrowsAsync(new InvalidOperationException());
-
-        // Act
-        var result = await _grpcClient.CallMethod(new RequestType());
-
-        // Assert
-        Assert.Null(result);
+        Assert.NotNull(typedResponse);
+        additionalAssertions(typedResponse);
     }
 }
